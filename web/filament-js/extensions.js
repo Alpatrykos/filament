@@ -43,6 +43,12 @@ function getBufferDescriptor(buffer) {
     };
     options = Object.assign(defaults, options);
     Filament.createContext(canvas, true, true, options);
+
+    // Enable all desired extensions by calling getExtension on each one.
+    Filament.ctx.getExtension('WEBGL_compressed_texture_s3tc');
+    Filament.ctx.getExtension('WEBGL_compressed_texture_astc');
+    Filament.ctx.getExtension('WEBGL_compressed_texture_etc');
+
     return Filament.Engine._create();
   };
 

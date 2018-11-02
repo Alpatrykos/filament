@@ -59,6 +59,24 @@ Filament.PixelBuffer = function(typedarray, format, datatype) {
   return bd;
 };
 
+/// CompressedPixelBuffer ::function:: Constructs a [PixelBufferDescriptor] for compressed texture
+/// data by copying a typed array into the WASM heap.
+/// typedarray ::argument:: Data to consume (e.g. Uint8Array, Uint16Array, Float32Array)
+/// cdatatype ::argument:: [CompressedPixelDataType]
+/// ::retval:: [PixelBufferDescriptor]
+Filament.CompressedPixelBuffer = function(typedarray, cdatatype) {
+    console.assert(typedarray.buffer instanceof ArrayBuffer);
+    console.assert(typedarray.byteLength > 0);
+    if (Filament.HEAPU32.buffer == typedarray.buffer) {
+      typedarray = new Uint8Array(typedarray);
+    }
+    const ta = typedarray;
+    const bd = new Filament.driver$PixelBufferDescriptor(ta, cdatatype, ta.byteLength, true);
+    const uint8array = new Uint8Array(ta.buffer, ta.byteOffset, ta.byteLength);
+    bd.getBytes().set(uint8array);
+    return bd;
+  };
+
 Filament._loadFilamesh = function(engine, buffer, definstance, matinstances) {
     matinstances = matinstances || {};
     const registry = new Filament.MeshIO$MaterialRegistry();
@@ -220,17 +238,16 @@ Filament._createTextureFromKtx = function(ktxdata, engine, options) {
   options = options || {};
 
   const Sampler = Filament.Texture$Sampler;
-  const TextureFormat = Filament.Texture$InternalFormat;
-  const PixelDataFormat = Filament.PixelDataFormat;
-  const gl = Filament.ctx;
-
   const ktx = options['ktx'] || new Filament.KtxBundle(ktxdata);
   const nlevels = ktx.getNumMipLevels();
   const ktxformat = ktx.info().glInternalFormat;
   const rgbm = !!options['rgbm'];
   const srgb = !!options['srgb'];
 
-  // TODO: this switch is incomplete. Can the KtxBundle class assist?
+  // TODO: replace this switch with KtxBundle calls
+  const TextureFormat = Filament.Texture$InternalFormat;
+  const PixelDataFormat = Filament.PixelDataFormat;
+  const gl = Filament.ctx;
   var texformat, pbformat, pbtype;
   switch (ktxformat) {
     case gl.LUMINANCE:
@@ -331,3 +348,49 @@ Filament._createTextureFromPng = function(pngdata, engine, options) {
   }
   return tex;
 };
+
+/// getSupportedFormats ::function:: Queries WebGL to check which compressed formats are supported.
+/// ::retval:: object with boolean values and the following keys: s3tc, astc, etc
+Filament.getSupportedFormats = function() {
+    if (Filament.supportedFormats) {
+        return Filament.supportedFormats;
+    }
+    const options = { majorVersion: 2, minorVersion: 0 };
+    var ctx = document.createElement('canvas').getContext('webgl2', options);
+    const result = {
+        s3tc: false,
+        astc: false,
+        etc: false,
+    }
+    var exts = ctx.getSupportedExtensions(), nexts = exts.length, i;
+    for (i = 0; i < nexts; i++) {
+        var ext = exts[i];
+        if (ext == "WEBGL_compressed_texture_s3tc") {
+            result.s3tc = true;
+        } else if (ext == "WEBGL_compressed_texture_astc") {
+            result.astc = true;
+        } else if (ext == "WEBGL_compressed_texture_etc") {
+            result.etc = true;
+        }
+    }
+    return Filament.supportedFormats = result;
+}
+
+/// getSupportedFormatSuffix ::function:: Generate a file suffix according to the texture format.
+/// Consumes a string describing desired formats and produces a file suffix depending on
+/// which (if any) of the formats are actually supported by the WebGL implementation. This is
+/// useful for compressed textures. For example, some platforms accept ETC and others accept S3TC.
+/// desiredFormats ::argument:: space-delimited string of desired formats
+/// ::retval:: empty string if there is no intersection of supported and desired formats.
+Filament.getSupportedFormatSuffix = function(desiredFormats) {
+    desiredFormats = desiredFormats.split(' ');
+    var exts = Filament.getSupportedFormats();
+    for (var key in exts) {
+        if (exts[key] && desiredFormats.includes(key)) {
+            // TODO: support compressed textures by returning the proper file suffix.
+            // return '_' + key;
+            return '';
+        }
+    }
+    return '';
+}
